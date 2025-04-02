@@ -1,5 +1,15 @@
 # GORM Metakit
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/nccapo/paginate-metakit)](https://goreportcard.com/report/github.com/nccapo/paginate-metakit)
+[![GoDoc](https://godoc.org/github.com/nccapo/paginate-metakit?status.svg)](https://godoc.org/github.com/nccapo/paginate-metakit)
+[![Release](https://img.shields.io/github/v/release/nccapo/paginate-metakit?include_prereleases&sort=semver)](https://github.com/nccapo/paginate-metakit/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/nccapo/paginate-metakit)](https://go.dev/doc/devel/release.html)
+[![License](https://img.shields.io/github/license/nccapo/paginate-metakit)](https://github.com/nccapo/paginate-metakit/blob/main/LICENSE)
+[![Codecov](https://codecov.io/gh/nccapo/paginate-metakit/branch/main/graph/badge.svg)](https://codecov.io/gh/nccapo/paginate-metakit)
+[![GitHub Actions](https://github.com/nccapo/paginate-metakit/actions/workflows/go-lint-and-test-on-push.yaml/badge.svg)](https://github.com/nccapo/paginate-metakit/actions)
+[![GitHub issues](https://img.shields.io/github/issues/nccapo/paginate-metakit)](https://github.com/nccapo/paginate-metakit/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/nccapo/paginate-metakit)](https://github.com/nccapo/paginate-metakit/pulls)
+
 A powerful pagination toolkit for Go applications using GORM and standard SQL databases. This package provides flexible pagination solutions with support for both offset-based and cursor-based pagination.
 
 ## Features

@@ -3,6 +3,7 @@ package metakit
 import (
 	"encoding/base64"
 	"fmt"
+	"reflect"
 
 	"gorm.io/gorm"
 )
@@ -51,6 +52,18 @@ func Paginate(db *gorm.DB, m *Metadata, result interface{}) error {
 
 	// Update metadata with calculated values
 	m.ValidateAndSetDefaults()
+
+	// Encode cursor for next page if using cursor-based pagination
+	if m.IsCursorBased() && m.HasNext {
+		lastItem := reflect.ValueOf(result).Index(reflect.ValueOf(result).Len() - 1).Interface()
+		cursorData := map[string]interface{}{
+			"id":         reflect.ValueOf(lastItem).FieldByName("ID").Interface(),
+			"created_at": reflect.ValueOf(lastItem).FieldByName("CreatedAt").Interface(),
+			"page":       m.Page,
+		}
+		m.Cursor = encodeCursor(cursorData)
+	}
+
 	return nil
 }
 
@@ -77,6 +90,18 @@ func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result int
 
 	// Update metadata with calculated values
 	m.ValidateAndSetDefaults()
+
+	// Encode cursor for next page if using cursor-based pagination
+	if m.IsCursorBased() && m.HasNext {
+		lastItem := reflect.ValueOf(result).Index(reflect.ValueOf(result).Len() - 1).Interface()
+		cursorData := map[string]interface{}{
+			"id":         reflect.ValueOf(lastItem).FieldByName("ID").Interface(),
+			"created_at": reflect.ValueOf(lastItem).FieldByName("CreatedAt").Interface(),
+			"page":       m.Page,
+		}
+		m.Cursor = encodeCursor(cursorData)
+	}
+
 	return nil
 }
 
