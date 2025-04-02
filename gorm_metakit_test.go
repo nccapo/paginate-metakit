@@ -126,12 +126,17 @@ type User struct {
 	Age   int
 }
 
-func setupTestDB(t *testing.T) *gorm.DB {
+// setupTestDB creates a test database with sample data
+func setupTestDB(t interface{ Fatal(args ...interface{}) }) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	err = db.AutoMigrate(&User{})
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Insert test data
 	users := []User{
@@ -144,7 +149,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	for _, user := range users {
 		err = db.Create(&user).Error
-		assert.NoError(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	return db

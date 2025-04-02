@@ -55,13 +55,17 @@ func Paginate(db *gorm.DB, m *Metadata, result interface{}) error {
 
 	// Encode cursor for next page if using cursor-based pagination
 	if m.IsCursorBased() && m.HasNext {
-		lastItem := reflect.ValueOf(result).Index(reflect.ValueOf(result).Len() - 1).Interface()
-		cursorData := map[string]interface{}{
-			"id":         reflect.ValueOf(lastItem).FieldByName("ID").Interface(),
-			"created_at": reflect.ValueOf(lastItem).FieldByName("CreatedAt").Interface(),
-			"page":       m.Page,
+		resultValue := reflect.ValueOf(result).Elem()
+		if resultValue.Len() > 0 {
+			lastItem := resultValue.Index(resultValue.Len() - 1).Interface()
+			lastItemValue := reflect.ValueOf(lastItem)
+			cursorData := map[string]interface{}{
+				"id":   lastItemValue.FieldByName("ID").Interface(),
+				"name": lastItemValue.FieldByName("Name").Interface(),
+				"page": m.Page,
+			}
+			m.Cursor = encodeCursor(cursorData)
 		}
-		m.Cursor = encodeCursor(cursorData)
 	}
 
 	return nil
@@ -93,13 +97,17 @@ func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result int
 
 	// Encode cursor for next page if using cursor-based pagination
 	if m.IsCursorBased() && m.HasNext {
-		lastItem := reflect.ValueOf(result).Index(reflect.ValueOf(result).Len() - 1).Interface()
-		cursorData := map[string]interface{}{
-			"id":         reflect.ValueOf(lastItem).FieldByName("ID").Interface(),
-			"created_at": reflect.ValueOf(lastItem).FieldByName("CreatedAt").Interface(),
-			"page":       m.Page,
+		resultValue := reflect.ValueOf(result).Elem()
+		if resultValue.Len() > 0 {
+			lastItem := resultValue.Index(resultValue.Len() - 1).Interface()
+			lastItemValue := reflect.ValueOf(lastItem)
+			cursorData := map[string]interface{}{
+				"id":   lastItemValue.FieldByName("ID").Interface(),
+				"name": lastItemValue.FieldByName("Name").Interface(),
+				"page": m.Page,
+			}
+			m.Cursor = encodeCursor(cursorData)
 		}
-		m.Cursor = encodeCursor(cursorData)
 	}
 
 	return nil
