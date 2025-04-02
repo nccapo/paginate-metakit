@@ -4,25 +4,58 @@ import (
 	"gorm.io/gorm"
 )
 
-// GPaginate is GORM scope function. Paginate calculates the total pages and offset based on current metadata and applies pagination to the Gorm query
-// GPaginate function cares Page and PageSize automatically, you can use your own function to replace it, it just overwrite fields
+// GPaginate is a GORM scope function that applies pagination and sorting to a query
 func GPaginate(m *Metadata) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
-		m.setPage()
-		m.setPageSize()
+		// Validate and set defaults
+		m.ValidateAndSetDefaults()
 
-		// Use integer arithmetic to avoid possible unsafe checking
-		if m.PageSize > 0 {
-			totalPages := (m.TotalRows + int64(m.PageSize) - 1) / int64(m.PageSize)
-			m.TotalPages = totalPages
-		} else {
-			m.TotalPages = 1
+		// Apply sorting if specified
+		if m.Sort != "" {
+			db = db.Order(m.GetSortClause())
 		}
 
-		// Calculate offset for the current page
-		offset := (m.Page - 1) * m.PageSize
-
-		// Apply offset and limit to the Gorm query
-		return db.Offset(offset).Limit(m.PageSize)
+		// Apply pagination
+		return db.Offset(m.GetOffset()).Limit(m.GetLimit())
 	}
+}
+
+// Paginate is a helper function that handles pagination for a GORM query
+// It returns the paginated results and updates the metadata with total count
+func Paginate(db *gorm.DB, m *Metadata, result interface{}) error {
+	// Get total count before applying pagination
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return err
+	}
+	m.TotalRows = total
+
+	// Apply pagination and get results
+	if err := db.Scopes(GPaginate(m)).Find(result).Error; err != nil {
+		return err
+	}
+
+	// Update metadata with calculated values
+	m.ValidateAndSetDefaults()
+	return nil
+}
+
+// PaginateWithCount is similar to Paginate but allows you to specify a custom count query
+// Useful when you need to count with specific conditions
+func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result interface{}) error {
+	// Get total count using the custom count query
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		return err
+	}
+	m.TotalRows = total
+
+	// Apply pagination and get results
+	if err := db.Scopes(GPaginate(m)).Find(result).Error; err != nil {
+		return err
+	}
+
+	// Update metadata with calculated values
+	m.ValidateAndSetDefaults()
+	return nil
 }
