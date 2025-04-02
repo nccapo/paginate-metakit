@@ -4,9 +4,9 @@ name: Go Lint & Test
 # Triggered on pull request and push events for any branch
 on:
   pull_request:
-    branches: ["**"]
+    branches: [main]
   push:
-    branches: ["main"]
+    branches: [main]
 
 # Defining jobs
 jobs:
@@ -14,53 +14,44 @@ jobs:
   lint:
     name: Lint Go Code
     runs-on: ubuntu-latest
-    env:
-      GO111MODULE: on
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            **/go.mod
-      - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
-      - name: Run staticcheck
+          go-version: "1.24.2"
+          check-latest: true
+      - name: Install Staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.3.3
+      - name: Run Staticcheck
         run: staticcheck ./...
 
   # Test job for Go on Linux with Go 1.22
   test:
-    name: Test on Linux with Go 1.22
+    name: Test Go Code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            **/go.mod
-      - name: Test
-        run: |
-          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-          go tool cover -func=coverage.txt
+          go-version: "1.24.2"
+          check-latest: true
+      - name: Run Tests
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: true
 
   # Benchmark job
   benchmark:
     name: Run Benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            **/go.mod
+          go-version: "1.24.2"
+          check-latest: true
       - name: Run Benchmarks
-        run: |
-          go test -bench=. -benchmem ./...
+        run: go test -bench=. -benchmem ./...
