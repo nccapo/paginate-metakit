@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.24"
+          go-version: "1.22"
           cache: true
           cache-dependency-path: |
             **/go.sum
@@ -32,12 +32,14 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.54
+          version: v1.55.2
           args: --timeout=5m
+          env:
+            GO111MODULE: on
 
-  # Test job for Go on Linux with Go 1.24
+  # Test job for Go on Linux with Go 1.22
   test:
-    name: Test on Linux with Go 1.24
+    name: Test on Linux with Go 1.22
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,7 +49,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.24"
+          go-version: "1.22"
           cache: true
           cache-dependency-path: |
             **/go.sum
