@@ -168,7 +168,9 @@ func TestPagination(t *testing.T) {
 			name: "First page with default size",
 			metadata: NewMetadata().
 				WithPage(1).
-				WithPageSize(2),
+				WithPageSize(2).
+				WithSort("name").
+				WithSortDirection("asc"),
 			expectedCount: 2,
 			expectedFirst: "Alice Brown",
 			expectedLast:  "Bob Johnson",
@@ -181,9 +183,11 @@ func TestPagination(t *testing.T) {
 			name: "Second page with custom size",
 			metadata: NewMetadata().
 				WithPage(2).
-				WithPageSize(3),
+				WithPageSize(3).
+				WithSort("name").
+				WithSortDirection("asc"),
 			expectedCount: 2,
-			expectedFirst: "Charlie Wilson",
+			expectedFirst: "Jane Smith",
 			expectedLast:  "John Doe",
 			hasNext:       false,
 			hasPrevious:   true,
@@ -210,7 +214,7 @@ func TestPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var users []User
-			err := Paginate(db, tt.metadata, &users)
+			err := Paginate(db.Model(&User{}), tt.metadata, &users)
 			assert.NoError(t, err)
 
 			// Check results
@@ -238,7 +242,7 @@ func TestCustomCountQuery(t *testing.T) {
 		WithPageSize(2)
 
 	var users []User
-	err := PaginateWithCount(db, countQuery, metadata, &users)
+	err := PaginateWithCount(db.Model(&User{}), countQuery, metadata, &users)
 	assert.NoError(t, err)
 
 	// Should only get users over 30
