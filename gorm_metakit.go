@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -13,6 +14,11 @@ func GPaginate(m *Metadata) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		// Validate and set defaults
 		m.ValidateAndSetDefaults()
+
+		// Apply field selection if specified
+		if len(m.SelectedFields) > 0 && m.SelectedFields[0] != "*" {
+			db = db.Select(m.SelectedFields)
+		}
 
 		// Apply sorting if specified
 		if m.Sort != "" {
@@ -32,18 +38,35 @@ func GPaginate(m *Metadata) func(db *gorm.DB) *gorm.DB {
 // Paginate is a helper function that handles pagination for a GORM query
 // It returns the paginated results and updates the metadata with total count
 func Paginate(db *gorm.DB, m *Metadata, result interface{}) error {
+	// Capture start time for debug mode
+	var startTime time.Time
+	if m.Debug {
+		startTime = time.Now()
+	}
+
 	// Validate metadata
 	validation := m.Validate()
 	if !validation.IsValid {
 		return fmt.Errorf("invalid metadata: %v", validation.Errors)
 	}
 
+	// Create a clone of the DB for counting (to not affect field selection)
+	countDB := db.Session(&gorm.Session{})
+
 	// Get total count before applying pagination
 	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	if err := countDB.Count(&total).Error; err != nil {
 		return err
 	}
 	m.TotalRows = total
+
+	// Debug: save the raw SQL
+	var rawSQL string
+	if m.Debug {
+		rawSQL = db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+			return tx.Scopes(GPaginate(m)).Find(result)
+		})
+	}
 
 	// Apply pagination and get results
 	if err := db.Scopes(GPaginate(m)).Find(result).Error; err != nil {
@@ -68,12 +91,26 @@ func Paginate(db *gorm.DB, m *Metadata, result interface{}) error {
 		}
 	}
 
+	// Add debug information
+	if m.Debug {
+		fmt.Printf("Query: %s\n", rawSQL)
+		fmt.Printf("Query time: %v\n", time.Since(startTime))
+		fmt.Printf("Total rows: %d\n", m.TotalRows)
+		fmt.Printf("Total pages: %d\n", m.TotalPages)
+	}
+
 	return nil
 }
 
 // PaginateWithCount is similar to Paginate but allows you to specify a custom count query
 // Useful when you need to count with specific conditions
 func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result interface{}) error {
+	// Capture start time for debug mode
+	var startTime time.Time
+	if m.Debug {
+		startTime = time.Now()
+	}
+
 	// Validate metadata
 	validation := m.Validate()
 	if !validation.IsValid {
@@ -87,6 +124,14 @@ func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result int
 	}
 	m.TotalRows = total
 
+	// Debug: save the raw SQL
+	var rawSQL string
+	if m.Debug {
+		rawSQL = db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+			return tx.Scopes(GPaginate(m)).Find(result)
+		})
+	}
+
 	// Apply pagination and get results
 	if err := db.Scopes(GPaginate(m)).Find(result).Error; err != nil {
 		return err
@@ -108,6 +153,14 @@ func PaginateWithCount(db *gorm.DB, countQuery *gorm.DB, m *Metadata, result int
 			}
 			m.Cursor = encodeCursor(cursorData)
 		}
+	}
+
+	// Add debug information
+	if m.Debug {
+		fmt.Printf("Query: %s\n", rawSQL)
+		fmt.Printf("Query time: %v\n", time.Since(startTime))
+		fmt.Printf("Total rows: %d\n", m.TotalRows)
+		fmt.Printf("Total pages: %d\n", m.TotalPages)
 	}
 
 	return nil

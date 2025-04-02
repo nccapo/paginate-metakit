@@ -256,3 +256,88 @@ func TestCustomCountQuery(t *testing.T) {
 	assert.Equal(t, 2, len(users))
 	assert.Equal(t, int64(2), metadata.TotalRows)
 }
+
+func TestFieldSelection(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Test with selected fields
+	metadata := NewMetadata().
+		WithPage(1).
+		WithPageSize(2).
+		WithSort("name").
+		WithSortDirection("asc").
+		WithFields("name", "email") // Only select name and email
+
+	var users []User
+	err := Paginate(db.Model(&User{}), metadata, &users)
+	assert.NoError(t, err)
+
+	// Check that we got 2 users
+	assert.Equal(t, 2, len(users))
+
+	// Check that the ID field is zero (not selected)
+	assert.Equal(t, uint(0), users[0].ID)
+
+	// Check that name and email are populated
+	assert.NotEmpty(t, users[0].Name)
+	assert.NotEmpty(t, users[0].Email)
+}
+
+func TestValidationRules(t *testing.T) {
+	// Test validation rule for page size (max)
+	metadata := NewMetadata().
+		WithPage(1).
+		WithPageSize(30).
+		WithValidationRule("page_size", "max:20")
+
+	validation := metadata.Validate()
+	assert.False(t, validation.IsValid)
+	assert.Equal(t, 1, len(validation.Errors))
+	assert.Equal(t, "page_size", validation.Errors[0].Field)
+	assert.Equal(t, "PAGE_SIZE_EXCEEDS_MAX", validation.Errors[0].Code)
+
+	// Test validation rule for sort field (in)
+	metadata = NewMetadata().
+		WithPage(1).
+		WithPageSize(10).
+		WithSort("invalid_field").
+		WithValidationRule("sort", "in:name,email,age")
+
+	validation = metadata.Validate()
+	assert.False(t, validation.IsValid)
+	assert.Equal(t, 1, len(validation.Errors))
+	assert.Equal(t, "sort", validation.Errors[0].Field)
+	assert.Equal(t, "INVALID_SORT_FIELD", validation.Errors[0].Code)
+
+	// Test validation rule for fields (in)
+	metadata = NewMetadata().
+		WithPage(1).
+		WithPageSize(10).
+		WithFields("id", "invalid_field").
+		WithValidationRule("fields", "in:id,name,email,age")
+
+	validation = metadata.Validate()
+	assert.False(t, validation.IsValid)
+	assert.Equal(t, 1, len(validation.Errors))
+	assert.Equal(t, "fields", validation.Errors[0].Field)
+	assert.Equal(t, "INVALID_SELECTED_FIELD", validation.Errors[0].Code)
+}
+
+func TestDebugMode(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Test with debug mode enabled (we can't easily test the output, but we can test it doesn't break)
+	metadata := NewMetadata().
+		WithPage(1).
+		WithPageSize(2).
+		WithSort("name").
+		WithSortDirection("asc").
+		WithDebug(true)
+
+	var users []User
+	err := Paginate(db.Model(&User{}), metadata, &users)
+	assert.NoError(t, err)
+
+	// Check that we still get results with debug enabled
+	assert.Equal(t, 2, len(users))
+}

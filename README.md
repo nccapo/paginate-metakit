@@ -26,10 +26,19 @@ A powerful pagination toolkit for Go applications using GORM and standard SQL da
 - 🔍 **Sorting Support**
   - Flexible field sorting
   - Direction control (asc/desc)
-- ✅ **Validation**
+- 🎯 **Field Selection**
+  - Select only needed fields
+  - Reduce data transfer
+  - Improve query performance
+- 🛡️ **Validation**
   - Input validation
   - Default value handling
+  - Custom validation rules
   - Error reporting
+- 🐞 **Debugging**
+  - Query logging
+  - Performance metrics
+  - SQL inspection
 - 🔗 **Method Chaining**
   - Fluent interface for easy configuration
   - Clear and readable code
@@ -58,60 +67,57 @@ metadata := metakit.NewMetadata().
     WithSort("created_at").
     WithSortDirection("desc")
 
-// Use with GORM
+// Use with GORM helper function
 var users []User
-result := db.Model(&User{}).
-    Order(metadata.GetSortClause()).
-    Offset(metadata.GetOffset()).
-    Limit(metadata.GetLimit()).
-    Find(&users)
-
-// Get total count
-var total int64
-db.Model(&User{}).Count(&total)
-metadata.TotalRows = total
-metadata.ValidateAndSetDefaults()
+err := metakit.Paginate(db.Model(&User{}), metadata, &users)
 ```
 
-### Cursor-Based Pagination
+### Field Selection
 
 ```go
-// Initialize cursor-based pagination
+// Only select specific fields
 metadata := metakit.NewMetadata().
-    WithCursorField("created_at").
-    WithCursorOrder("desc").
-    WithPageSize(10)
+    WithPage(1).
+    WithPageSize(10).
+    WithSort("created_at").
+    WithSortDirection("desc").
+    WithFields("id", "name", "email") // Only include these fields
 
 var users []User
-query := db.Model(&User{})
+err := metakit.Paginate(db.Model(&User{}), metadata, &users)
+```
 
-// Apply cursor if provided
-if metadata.Cursor != "" {
-    cursorValue, _ := decodeCursor(metadata.Cursor)
-    query = query.Where("created_at < ?", cursorValue)
+### Custom Validation Rules
+
+```go
+// Add custom validation rules
+metadata := metakit.NewMetadata().
+    WithPage(1).
+    WithPageSize(10).
+    WithSort("created_at").
+    WithValidationRule("page_size", "max:50").
+    WithValidationRule("sort", "in:id,name,email,created_at").
+    WithValidationRule("fields", "in:id,name,email,created_at,updated_at")
+
+// Validate metadata
+result := metadata.Validate()
+if !result.IsValid {
+    // Handle validation errors
 }
+```
 
-// Execute query
-result := query.
-    Order(metadata.GetSortClause()).
-    Limit(metadata.GetLimit() + 1).
-    Find(&users)
+### Debug Mode
 
-// Handle pagination
-hasMore := len(users) > metadata.GetLimit()
-if hasMore {
-    users = users[:metadata.GetLimit()]
-}
+```go
+// Enable debug mode to see query details
+metadata := metakit.NewMetadata().
+    WithPage(1).
+    WithPageSize(10).
+    WithDebug(true)
 
-// Set next cursor
-if hasMore {
-    lastUser := users[len(users)-1]
-    nextCursor := encodeCursor(map[string]interface{}{
-        "created_at": lastUser.CreatedAt,
-        "id": lastUser.ID,
-    })
-    metadata.Cursor = nextCursor
-}
+var users []User
+err := metakit.Paginate(db.Model(&User{}), metadata, &users)
+// Debug output will be printed to the console
 ```
 
 ## API Reference
@@ -132,6 +138,17 @@ metadata.WithSortDirection("desc") // Set sort direction
 metadata.WithCursorField("created_at") // Set cursor field
 metadata.WithCursorOrder("desc")       // Set cursor order
 metadata.WithCursor("base64-encoded-cursor") // Set cursor value
+
+// Configure field selection
+metadata.WithFields("id", "name", "email") // Select specific fields
+
+// Configure validation rules
+metadata.WithValidationRule("page_size", "max:50") // Maximum page size
+metadata.WithValidationRule("sort", "in:id,name,created_at") // Allowed sort fields
+metadata.WithValidationRule("fields", "in:id,name,email") // Allowed fields to select
+
+// Enable debug mode
+metadata.WithDebug(true) // Show debug information
 ```
 
 ### Validation
@@ -142,7 +159,7 @@ result := metadata.Validate()
 if !result.IsValid {
     // Handle validation errors
     for _, err := range result.Errors {
-        fmt.Printf("Error in %s: %s\n", err.Field, err.Message)
+        fmt.Printf("Error in %s: %s (Code: %s)\n", err.Field, err.Message, err.Code)
     }
 }
 
@@ -157,6 +174,7 @@ offset := metadata.GetOffset()    // Get current offset
 limit := metadata.GetLimit()      // Get current limit
 sortClause := metadata.GetSortClause() // Get formatted sort clause
 isCursorBased := metadata.IsCursorBased() // Check pagination type
+fields := metadata.GetSelectedFields() // Get fields to select
 ```
 
 ## Error Handling
@@ -332,4 +350,70 @@ For more detailed results:
 
 ```bash
 go test -bench=. -benchmem -benchtime=5s ./...
+```
+
+## Advanced Examples
+
+### Combining Multiple Features
+
+```go
+// Combine field selection, validation, and debug mode
+metadata := metakit.NewMetadata().
+    WithPage(1).
+    WithPageSize(20).
+    WithSort("created_at").
+    WithSortDirection("desc").
+    WithFields("id", "name", "email", "created_at").
+    WithValidationRule("page_size", "max:50").
+    WithValidationRule("sort", "in:id,name,email,created_at").
+    WithValidationRule("fields", "in:id,name,email,created_at,updated_at").
+    WithDebug(true)
+
+// Validate before executing
+if result := metadata.Validate(); !result.IsValid {
+    for _, err := range result.Errors {
+        log.Printf("Validation error: %s - %s", err.Field, err.Message)
+    }
+    return errors.New("invalid pagination parameters")
+}
+
+// Execute the query with all features
+var users []User
+err := metakit.Paginate(db.Model(&User{}), metadata, &users)
+if err != nil {
+    return err
+}
+
+// Result includes only the selected fields
+// Debug information is printed to console
+// Query is optimized with only necessary fields
+```
+
+### Cursor-Based Pagination with Field Selection
+
+```go
+// Use cursor-based pagination with field selection
+metadata := metakit.NewMetadata().
+    WithCursorField("created_at").
+    WithCursorOrder("desc").
+    WithPageSize(10).
+    WithFields("id", "name", "created_at").
+    WithDebug(true)
+
+var users []User
+err := metakit.Paginate(db.Model(&User{}), metadata, &users)
+
+// Get the cursor for the next page
+nextCursor := metadata.Cursor
+
+// Use the cursor for the next page
+nextPageMetadata := metakit.NewMetadata().
+    WithCursor(nextCursor).
+    WithCursorField("created_at").
+    WithCursorOrder("desc").
+    WithPageSize(10).
+    WithFields("id", "name", "created_at")
+
+var nextUsers []User
+err = metakit.Paginate(db.Model(&User{}), nextPageMetadata, &nextUsers)
 ```

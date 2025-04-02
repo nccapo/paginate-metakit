@@ -1,5 +1,11 @@
 package metakit
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // ValidationError represents a single validation error with field-specific information.
 // It provides both human-readable messages and machine-readable error codes.
 type ValidationError struct {
@@ -67,6 +73,15 @@ type Metadata struct {
 	Cursor      string `form:"cursor" json:"cursor"`
 	CursorField string `form:"cursor_field" json:"cursor_field"`
 	CursorOrder string `form:"cursor_order" json:"cursor_order"`
+
+	// Field selection - choose specific fields to include in the result
+	SelectedFields []string `form:"fields" json:"fields"`
+
+	// Debug mode - provides additional information for debugging
+	Debug bool `form:"debug" json:"debug"`
+
+	// ValidationRules - custom validation rules for metadata fields
+	ValidationRules map[string]string `json:"-"`
 }
 
 // NewMetadata creates a new Metadata instance with default values.
@@ -232,6 +247,7 @@ func (m *Metadata) GetSortClause() string {
 //   - SortDirection is either "asc" or "desc"
 //   - CursorField is provided when using cursor-based pagination
 //   - CursorOrder is either "asc" or "desc" when provided
+//   - Custom validation rules when specified
 //
 // Example:
 //
@@ -242,66 +258,141 @@ func (m *Metadata) GetSortClause() string {
 //	// result.Errors[0].Field == "page"
 //	// result.Errors[0].Message == "Page must be greater than 0"
 func (m *Metadata) Validate() ValidationResult {
-	result := ValidationResult{
-		IsValid: true,
-		Errors:  make([]ValidationError, 0),
-	}
+	var result ValidationResult
+	var errors []ValidationError
 
-	// Validate page
+	// Check page number
 	if m.Page < 1 {
-		result.IsValid = false
-		result.Errors = append(result.Errors, ValidationError{
+		errors = append(errors, ValidationError{
 			Field:   "page",
 			Message: "Page must be greater than 0",
-			Code:    "INVALID_PAGE",
+			Code:    "PAGE_NEGATIVE",
 		})
 	}
 
-	// Validate page size
+	// Check page size
 	if m.PageSize < 1 {
-		result.IsValid = false
-		result.Errors = append(result.Errors, ValidationError{
+		errors = append(errors, ValidationError{
 			Field:   "page_size",
 			Message: "Page size must be greater than 0",
-			Code:    "INVALID_PAGE_SIZE",
+			Code:    "PAGE_SIZE_NEGATIVE",
 		})
 	} else if m.PageSize > 100 {
-		result.IsValid = false
-		result.Errors = append(result.Errors, ValidationError{
+		errors = append(errors, ValidationError{
 			Field:   "page_size",
-			Message: "Page size cannot exceed 100",
+			Message: "Page size must be less than or equal to 100",
 			Code:    "PAGE_SIZE_TOO_LARGE",
 		})
 	}
 
-	// Validate sort direction
+	// Check sort direction if specified
 	if m.SortDirection != "" && m.SortDirection != "asc" && m.SortDirection != "desc" {
-		result.IsValid = false
-		result.Errors = append(result.Errors, ValidationError{
+		errors = append(errors, ValidationError{
 			Field:   "sort_direction",
 			Message: "Sort direction must be either 'asc' or 'desc'",
 			Code:    "INVALID_SORT_DIRECTION",
 		})
 	}
 
-	// Validate cursor pagination fields if using cursor-based pagination
-	if m.Cursor != "" {
-		if m.CursorField == "" {
-			result.IsValid = false
-			result.Errors = append(result.Errors, ValidationError{
-				Field:   "cursor_field",
-				Message: "Cursor field is required when using cursor-based pagination",
-				Code:    "MISSING_CURSOR_FIELD",
-			})
+	// Check cursor field when cursor is specified
+	if m.Cursor != "" && m.CursorField == "" {
+		errors = append(errors, ValidationError{
+			Field:   "cursor_field",
+			Message: "Cursor field is required when using cursor-based pagination",
+			Code:    "MISSING_CURSOR_FIELD",
+		})
+	}
+
+	// Check cursor order when cursor field is specified
+	if m.CursorField != "" && m.CursorOrder != "" && m.CursorOrder != "asc" && m.CursorOrder != "desc" {
+		errors = append(errors, ValidationError{
+			Field:   "cursor_order",
+			Message: "Cursor order must be either 'asc' or 'desc'",
+			Code:    "INVALID_CURSOR_ORDER",
+		})
+	}
+
+	// Apply custom validation rules
+	if m.ValidationRules != nil {
+		for field, rule := range m.ValidationRules {
+			switch field {
+			case "page_size":
+				if strings.HasPrefix(rule, "max:") {
+					maxStr := strings.TrimPrefix(rule, "max:")
+					max, err := strconv.Atoi(maxStr)
+					if err == nil && m.PageSize > max {
+						errors = append(errors, ValidationError{
+							Field:   "page_size",
+							Message: fmt.Sprintf("Page size must be less than or equal to %d", max),
+							Code:    "PAGE_SIZE_EXCEEDS_MAX",
+						})
+					}
+				} else if strings.HasPrefix(rule, "min:") {
+					minStr := strings.TrimPrefix(rule, "min:")
+					min, err := strconv.Atoi(minStr)
+					if err == nil && m.PageSize < min {
+						errors = append(errors, ValidationError{
+							Field:   "page_size",
+							Message: fmt.Sprintf("Page size must be greater than or equal to %d", min),
+							Code:    "PAGE_SIZE_BELOW_MIN",
+						})
+					}
+				}
+			case "sort":
+				if strings.HasPrefix(rule, "in:") {
+					allowedValues := strings.Split(strings.TrimPrefix(rule, "in:"), ",")
+					if m.Sort != "" {
+						valid := false
+						for _, v := range allowedValues {
+							if m.Sort == v {
+								valid = true
+								break
+							}
+						}
+						if !valid {
+							errors = append(errors, ValidationError{
+								Field:   "sort",
+								Message: fmt.Sprintf("Sort field must be one of: %s", strings.Join(allowedValues, ", ")),
+								Code:    "INVALID_SORT_FIELD",
+							})
+						}
+					}
+				}
+			case "fields":
+				if strings.HasPrefix(rule, "in:") {
+					allowedValues := strings.Split(strings.TrimPrefix(rule, "in:"), ",")
+					for _, field := range m.SelectedFields {
+						if field == "*" {
+							continue
+						}
+
+						valid := false
+						for _, v := range allowedValues {
+							if field == v {
+								valid = true
+								break
+							}
+						}
+						if !valid {
+							errors = append(errors, ValidationError{
+								Field:   "fields",
+								Message: fmt.Sprintf("Selected field '%s' is not allowed. Allowed fields: %s", field, strings.Join(allowedValues, ", ")),
+								Code:    "INVALID_SELECTED_FIELD",
+							})
+							break
+						}
+					}
+				}
+			}
 		}
-		if m.CursorOrder != "" && m.CursorOrder != "asc" && m.CursorOrder != "desc" {
-			result.IsValid = false
-			result.Errors = append(result.Errors, ValidationError{
-				Field:   "cursor_order",
-				Message: "Cursor order must be either 'asc' or 'desc'",
-				Code:    "INVALID_CURSOR_ORDER",
-			})
-		}
+	}
+
+	// Check if there are any errors
+	if len(errors) > 0 {
+		result.IsValid = false
+		result.Errors = errors
+	} else {
+		result.IsValid = true
 	}
 
 	return result
@@ -355,6 +446,65 @@ func (m *Metadata) WithCursorOrder(order string) *Metadata {
 //	// metadata.IsCursorBased() == true
 func (m *Metadata) IsCursorBased() bool {
 	return m.Cursor != "" || m.CursorField != ""
+}
+
+// WithFields sets the selected fields to include in the result and returns the metadata for method chaining.
+// Only these fields will be included in the query result.
+//
+// Example:
+//
+//	metadata := NewMetadata().WithFields("id", "name", "email")
+//	// metadata.SelectedFields == []string{"id", "name", "email"}
+func (m *Metadata) WithFields(fields ...string) *Metadata {
+	m.SelectedFields = fields
+	return m
+}
+
+// GetSelectedFields returns the fields to select in the query.
+// If no fields are specifically selected, returns "*" to select all fields.
+//
+// Example:
+//
+//	metadata := NewMetadata().WithFields("id", "name")
+//	fields := metadata.GetSelectedFields()
+//	// fields == []string{"id", "name"}
+//
+//	metadata := NewMetadata() // No fields specified
+//	fields := metadata.GetSelectedFields()
+//	// fields == []string{"*"}
+func (m *Metadata) GetSelectedFields() []string {
+	if len(m.SelectedFields) == 0 {
+		return []string{"*"}
+	}
+	return m.SelectedFields
+}
+
+// WithDebug enables or disables debug mode and returns the metadata for method chaining.
+// When debug mode is enabled, additional information is provided for debugging purposes.
+//
+// Example:
+//
+//	metadata := NewMetadata().WithDebug(true)
+//	// metadata.Debug == true
+func (m *Metadata) WithDebug(debug bool) *Metadata {
+	m.Debug = debug
+	return m
+}
+
+// WithValidationRule adds a validation rule for a specific field and returns the metadata for method chaining.
+// Rules can be used to validate metadata fields before executing the query.
+//
+// Example:
+//
+//	metadata := NewMetadata().
+//	  WithValidationRule("page_size", "max:50").
+//	  WithValidationRule("sort", "in:id,name,created_at")
+func (m *Metadata) WithValidationRule(field, rule string) *Metadata {
+	if m.ValidationRules == nil {
+		m.ValidationRules = make(map[string]string)
+	}
+	m.ValidationRules[field] = rule
+	return m
 }
 
 // Complete pagination examples:
