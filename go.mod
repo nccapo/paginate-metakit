@@ -1,4 +1,4 @@
-module github.com/nccapo/gorm-metakit
+module github.com/nccapo/paginate-metakit
 
 go 1.23.8
 
