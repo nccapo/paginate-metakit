@@ -28,7 +28,8 @@ jobs:
       - uses: golangci/golangci-lint-action@v3
         with:
           version: v1.55.2
-          args: --timeout=5m
+          args: --timeout=5m --go=1.22
+          go-version-file: go.mod
 
   # Test job for Go on Linux with Go 1.22
   test:
