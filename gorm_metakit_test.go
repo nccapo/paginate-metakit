@@ -1,9 +1,12 @@
 package metakit
 
 import (
+	"testing"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSortDirectionParams(t *testing.T) {
@@ -16,7 +19,7 @@ func TestSortDirectionParams(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test.input.SortDirectionParams()
+		test.input.ValidateAndSetDefaults()
 		if test.input.SortDirection != test.expected {
 			t.Errorf("expected %v, got %v", test.expected, test.input.SortDirection)
 		}
@@ -26,7 +29,7 @@ func TestSortDirectionParams(t *testing.T) {
 func TestSortParams(t *testing.T) {
 	m := Metadata{}
 	sort := "name"
-	m.SortParams(sort)
+	m.WithSort(sort)
 	if m.Sort != sort {
 		t.Errorf("expected %v, got %v", sort, m.Sort)
 	}
@@ -52,8 +55,7 @@ func TestGPaginate(t *testing.T) {
 
 		_ = GPaginate(&test.metadata)(db)
 
-		test.metadata.setPage()
-		test.metadata.setPageSize()
+		test.metadata.ValidateAndSetDefaults()
 
 		totalPages := (test.metadata.TotalRows + int64(test.metadata.PageSize) - 1) / int64(test.metadata.PageSize)
 		if test.metadata.TotalPages != totalPages {
@@ -95,8 +97,7 @@ func TestSQLPaginate(t *testing.T) {
 
 		_ = GPaginate(&test.metadata)(db)
 
-		test.metadata.setPage()
-		test.metadata.setPageSize()
+		test.metadata.ValidateAndSetDefaults()
 
 		totalPages := (test.metadata.TotalRows + int64(test.metadata.PageSize) - 1) / int64(test.metadata.PageSize)
 		if test.metadata.TotalPages != totalPages {
@@ -116,4 +117,131 @@ func TestSQLPaginate(t *testing.T) {
 			t.Errorf("expected offset %v, got %v", test.expectedOff, offset)
 		}
 	}
+}
+
+type User struct {
+	ID    uint   `gorm:"primarykey"`
+	Name  string `gorm:"size:255"`
+	Email string `gorm:"size:255"`
+	Age   int
+}
+
+func setupTestDB(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	err = db.AutoMigrate(&User{})
+	assert.NoError(t, err)
+
+	// Insert test data
+	users := []User{
+		{Name: "John Doe", Email: "john@example.com", Age: 30},
+		{Name: "Jane Smith", Email: "jane@example.com", Age: 25},
+		{Name: "Bob Johnson", Email: "bob@example.com", Age: 35},
+		{Name: "Alice Brown", Email: "alice@example.com", Age: 28},
+		{Name: "Charlie Wilson", Email: "charlie@example.com", Age: 32},
+	}
+
+	for _, user := range users {
+		err = db.Create(&user).Error
+		assert.NoError(t, err)
+	}
+
+	return db
+}
+
+func TestPagination(t *testing.T) {
+	db := setupTestDB(t)
+
+	tests := []struct {
+		name          string
+		metadata      *Metadata
+		expectedCount int
+		expectedFirst string
+		expectedLast  string
+		hasNext       bool
+		hasPrevious   bool
+		expectedFrom  int64
+		expectedTo    int64
+	}{
+		{
+			name: "First page with default size",
+			metadata: NewMetadata().
+				WithPage(1).
+				WithPageSize(2),
+			expectedCount: 2,
+			expectedFirst: "Alice Brown",
+			expectedLast:  "Bob Johnson",
+			hasNext:       true,
+			hasPrevious:   false,
+			expectedFrom:  1,
+			expectedTo:    2,
+		},
+		{
+			name: "Second page with custom size",
+			metadata: NewMetadata().
+				WithPage(2).
+				WithPageSize(3),
+			expectedCount: 2,
+			expectedFirst: "Charlie Wilson",
+			expectedLast:  "John Doe",
+			hasNext:       false,
+			hasPrevious:   true,
+			expectedFrom:  4,
+			expectedTo:    5,
+		},
+		{
+			name: "Sort by age descending",
+			metadata: NewMetadata().
+				WithPage(1).
+				WithPageSize(2).
+				WithSort("age").
+				WithSortDirection("desc"),
+			expectedCount: 2,
+			expectedFirst: "Bob Johnson",
+			expectedLast:  "Charlie Wilson",
+			hasNext:       true,
+			hasPrevious:   false,
+			expectedFrom:  1,
+			expectedTo:    2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var users []User
+			err := Paginate(db, tt.metadata, &users)
+			assert.NoError(t, err)
+
+			// Check results
+			assert.Equal(t, tt.expectedCount, len(users))
+			assert.Equal(t, tt.expectedFirst, users[0].Name)
+			assert.Equal(t, tt.expectedLast, users[len(users)-1].Name)
+
+			// Check metadata
+			assert.Equal(t, tt.hasNext, tt.metadata.HasNext)
+			assert.Equal(t, tt.hasPrevious, tt.metadata.HasPrevious)
+			assert.Equal(t, tt.expectedFrom, tt.metadata.FromRow)
+			assert.Equal(t, tt.expectedTo, tt.metadata.ToRow)
+		})
+	}
+}
+
+func TestCustomCountQuery(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a custom count query that only counts users over 30
+	countQuery := db.Model(&User{}).Where("age > ?", 30)
+
+	metadata := NewMetadata().
+		WithPage(1).
+		WithPageSize(2)
+
+	var users []User
+	err := PaginateWithCount(db, countQuery, metadata, &users)
+	assert.NoError(t, err)
+
+	// Should only get users over 30
+	assert.Equal(t, 2, len(users))
+	assert.Equal(t, int64(2), metadata.TotalRows)
 }

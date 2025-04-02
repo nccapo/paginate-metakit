@@ -16,9 +16,6 @@ const (
 
 // QueryContextPaginate calculates the total pages and offset based on the current metadata and applies pagination to the SQL query
 func QueryContextPaginate(ctx context.Context, db *sql.DB, dialect Dialect, query string, m *Metadata, args ...any) (*sql.Rows, error) {
-	m.setPage()
-	m.setPageSize()
-
 	// calculate the total pages
 	if m.PageSize > 0 {
 		totalPages := (m.TotalRows + int64(m.PageSize) - 1) / int64(m.PageSize)

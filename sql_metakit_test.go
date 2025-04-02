@@ -41,9 +41,7 @@ func TestSPaginate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test.metadata.setPage()
-		test.metadata.setPageSize()
-		test.metadata.SortDirectionParams()
+		test.metadata.ValidateAndSetDefaults()
 		rows, err := QueryContextPaginate(context.Background(), db, 1, "SELECT * FROM items", &test.metadata)
 		if err != nil {
 			t.Fatalf("failed to execute paginated query: %v", err)
