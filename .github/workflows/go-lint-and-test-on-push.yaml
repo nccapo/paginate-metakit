@@ -25,10 +25,10 @@ jobs:
           cache-dependency-path: |
             **/go.sum
             **/go.mod
-      - uses: golangci/golangci-lint-action@v3
-        with:
-          version: v1.54.2
-          args: --timeout=5m --disable=goanalysis_metalinter
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - name: Run staticcheck
+        run: staticcheck ./...
 
   # Test job for Go on Linux with Go 1.22
   test:
