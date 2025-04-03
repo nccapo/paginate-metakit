@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -126,4 +127,131 @@ type QueryOptions struct {
 	UseIndexHint  bool
 	Timeout       time.Duration
 	OptimizeCount bool
+}
+
+// QueryOptimizer provides optimization strategies for queries
+type QueryOptimizer struct {
+	UseIndexHint    bool
+	UseQueryCache   bool
+	BatchSize       int
+	Timeout         time.Duration
+	MaxRows         int
+	UseMaterialized bool
+}
+
+// NewQueryOptimizer creates a new query optimizer with default settings
+func NewQueryOptimizer() *QueryOptimizer {
+	return &QueryOptimizer{
+		UseIndexHint:    true,
+		UseQueryCache:   true,
+		BatchSize:       1000,
+		Timeout:         30 * time.Second,
+		MaxRows:         10000,
+		UseMaterialized: false,
+	}
+}
+
+// WithIndexHint enables or disables index hints
+func (q *QueryOptimizer) WithIndexHint(use bool) *QueryOptimizer {
+	q.UseIndexHint = use
+	return q
+}
+
+// WithQueryCache enables or disables query caching
+func (q *QueryOptimizer) WithQueryCache(use bool) *QueryOptimizer {
+	q.UseQueryCache = use
+	return q
+}
+
+// WithBatchSize sets the batch size for batch operations
+func (q *QueryOptimizer) WithBatchSize(size int) *QueryOptimizer {
+	q.BatchSize = size
+	return q
+}
+
+// WithTimeout sets the query timeout
+func (q *QueryOptimizer) WithTimeout(timeout time.Duration) *QueryOptimizer {
+	q.Timeout = timeout
+	return q
+}
+
+// WithMaxRows sets the maximum number of rows to return
+func (q *QueryOptimizer) WithMaxRows(max int) *QueryOptimizer {
+	q.MaxRows = max
+	return q
+}
+
+// WithMaterialized enables or disables materialized views
+func (q *QueryOptimizer) WithMaterialized(use bool) *QueryOptimizer {
+	q.UseMaterialized = use
+	return q
+}
+
+// OptimizeQuery applies optimization strategies to the query
+func (q *QueryOptimizer) OptimizeQuery(query string, dialect Dialect) string {
+	optimized := query
+
+	// Add index hints if enabled
+	if q.UseIndexHint {
+		switch dialect {
+		case MySQL:
+			optimized = addMySQLIndexHints(optimized)
+		case PostgreSQL:
+			optimized = addPostgreSQLIndexHints(optimized)
+		}
+	}
+
+	// Add materialized view if enabled
+	if q.UseMaterialized {
+		optimized = addMaterializedView(optimized, dialect)
+	}
+
+	// Add row limit if MaxRows is set
+	if q.MaxRows > 0 {
+		optimized = addRowLimit(optimized, q.MaxRows, dialect)
+	}
+
+	return optimized
+}
+
+// addMySQLIndexHints adds MySQL-specific index hints
+func addMySQLIndexHints(query string) string {
+	// Add FORCE INDEX hint for better performance
+	if strings.Contains(strings.ToLower(query), "where") {
+		return strings.Replace(query, "WHERE", "FORCE INDEX (idx_created_at) WHERE", 1)
+	}
+	return query
+}
+
+// addPostgreSQLIndexHints adds PostgreSQL-specific index hints
+func addPostgreSQLIndexHints(query string) string {
+	// Add index hints using PostgreSQL syntax
+	if strings.Contains(strings.ToLower(query), "where") {
+		return strings.Replace(query, "WHERE", "WHERE /*+ IndexScan(table_name idx_created_at) */", 1)
+	}
+	return query
+}
+
+// addMaterializedView adds materialized view support
+func addMaterializedView(query string, dialect Dialect) string {
+	switch dialect {
+	case PostgreSQL:
+		return "WITH MATERIALIZED " + query
+	case MySQL:
+		return "WITH RECURSIVE " + query
+	default:
+		return query
+	}
+}
+
+// addRowLimit adds a row limit to the query
+func addRowLimit(query string, limit int, dialect Dialect) string {
+	switch dialect {
+	case PostgreSQL:
+		return query + fmt.Sprintf(" LIMIT %d", limit)
+	case MySQL, SQLite:
+		return query + fmt.Sprintf(" LIMIT %d", limit)
+	default:
+		return query
+	}
 }

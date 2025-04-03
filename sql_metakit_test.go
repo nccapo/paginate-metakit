@@ -81,3 +81,58 @@ func TestSPaginate(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryOptimization(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		dialect   Dialect
+		optimizer *QueryOptimizer
+		expected  string
+	}{
+		{
+			name:    "MySQL index hint",
+			query:   "SELECT * FROM users WHERE age > 18",
+			dialect: MySQL,
+			optimizer: NewQueryOptimizer().
+				WithIndexHint(true).
+				WithMaxRows(0), // Disable row limit for this test
+			expected: "SELECT * FROM users FORCE INDEX (idx_created_at) WHERE age > 18",
+		},
+		{
+			name:    "PostgreSQL index hint",
+			query:   "SELECT * FROM users WHERE age > 18",
+			dialect: PostgreSQL,
+			optimizer: NewQueryOptimizer().
+				WithIndexHint(true).
+				WithMaxRows(0), // Disable row limit for this test
+			expected: "SELECT * FROM users WHERE /*+ IndexScan(table_name idx_created_at) */ age > 18",
+		},
+		{
+			name:    "Row limit",
+			query:   "SELECT * FROM users",
+			dialect: PostgreSQL,
+			optimizer: NewQueryOptimizer().
+				WithMaxRows(100),
+			expected: "SELECT * FROM users LIMIT 100",
+		},
+		{
+			name:    "Materialized view",
+			query:   "SELECT * FROM users",
+			dialect: PostgreSQL,
+			optimizer: NewQueryOptimizer().
+				WithMaterialized(true).
+				WithMaxRows(0), // Disable row limit for this test
+			expected: "WITH MATERIALIZED SELECT * FROM users",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.optimizer.OptimizeQuery(tt.query, tt.dialect)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
