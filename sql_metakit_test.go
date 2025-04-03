@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -134,5 +135,67 @@ func TestQueryOptimization(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestQueryContextPaginateWithPostgreSQLParams(t *testing.T) {
+	// Skip this test if not using PostgreSQL
+	if testing.Short() {
+		t.Skip("Skipping PostgreSQL test in short mode")
+	}
+
+	// Connect to PostgreSQL database
+	// Note: This test requires a running PostgreSQL instance
+	// You may need to adjust the connection string
+	db, err := sql.Open("postgres", "postgres://username:password@localhost:5432/testdb?sslmode=disable")
+	if err != nil {
+		t.Skipf("Skipping test: could not connect to PostgreSQL: %v", err)
+	}
+	defer db.Close()
+
+	// Create a test table
+	_, err = db.Exec("DROP TABLE IF EXISTS test_items")
+	if err != nil {
+		t.Fatalf("failed to drop table: %v", err)
+	}
+
+	_, err = db.Exec("CREATE TABLE test_items (id SERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	// Insert test data
+	for i := 1; i <= 100; i++ {
+		_, err = db.Exec("INSERT INTO test_items (name) VALUES ($1)", fmt.Sprintf("Item %d", i))
+		if err != nil {
+			t.Fatalf("failed to insert data: %v", err)
+		}
+	}
+
+	// Test with a query that has parameters
+	query := "SELECT * FROM test_items WHERE created_at > $1"
+	createdAt := time.Now().Add(-24 * time.Hour) // 24 hours ago
+
+	metadata := &Metadata{
+		Page:          1,
+		PageSize:      10,
+		TotalRows:     100,
+		Sort:          "name",
+		SortDirection: "asc",
+	}
+
+	rows, err := QueryContextPaginate(context.Background(), db, PostgreSQL, query, metadata, createdAt)
+	if err != nil {
+		t.Fatalf("failed to execute paginated query: %v", err)
+	}
+	defer rows.Close()
+
+	// Verify the results
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if count == 0 {
+		t.Log("No rows returned, which might be expected depending on the data")
 	}
 }

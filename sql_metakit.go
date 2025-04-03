@@ -24,6 +24,20 @@ func QueryContextPaginate(ctx context.Context, db *sql.DB, dialect Dialect, quer
 		return nil, fmt.Errorf("invalid metadata: %v", validation.Errors)
 	}
 
+	// Check if sort field and direction are provided as separate arguments
+	if len(args) >= 2 {
+		// If the first two arguments are strings, they might be sort field and direction
+		if sortField, ok := args[0].(string); ok {
+			if sortDir, ok := args[1].(string); ok {
+				// Set the sort field and direction in the metadata
+				m.Sort = sortField
+				m.SortDirection = sortDir
+				// Remove these arguments from args
+				args = args[2:]
+			}
+		}
+	}
+
 	// Apply cursor-based pagination if enabled
 	if m.IsCursorBased() {
 		return applyCursorSQLPagination(ctx, db, dialect, query, m, args...)
@@ -44,8 +58,17 @@ func QueryContextPaginate(ctx context.Context, db *sql.DB, dialect Dialect, quer
 	var paginatedQuery string
 	switch dialect {
 	case PostgreSQL:
-		// Use $1, $2 for parameterized queries
-		paginatedQuery = fmt.Sprintf("%s ORDER BY %s %s LIMIT $%d OFFSET $%d", query, m.Sort, m.SortDirection, len(args)+1, len(args)+2)
+		// Count the number of existing parameters in the query
+		paramCount := 0
+		for i := 0; i < len(query); i++ {
+			if i+1 < len(query) && query[i] == '$' && query[i+1] >= '1' && query[i+1] <= '9' {
+				paramCount++
+			}
+		}
+
+		// Use $n for parameterized queries, where n is the next available parameter number
+		paginatedQuery = fmt.Sprintf("%s ORDER BY %s %s LIMIT $%d OFFSET $%d",
+			query, m.Sort, m.SortDirection, paramCount+1, paramCount+2)
 		args = append(args, m.PageSize, offset)
 	case MySQL, SQLite:
 		// Use ? for parameterized queries
@@ -66,6 +89,30 @@ func applyCursorSQLPagination(ctx context.Context, db *sql.DB, dialect Dialect, 
 	var paginatedQuery string
 	var cursorCondition string
 
+	// Check if sort field and direction are provided as separate arguments
+	if len(args) >= 2 {
+		// If the first two arguments are strings, they might be sort field and direction
+		if sortField, ok := args[0].(string); ok {
+			if sortDir, ok := args[1].(string); ok {
+				// Set the sort field and direction in the metadata
+				m.Sort = sortField
+				m.SortDirection = sortDir
+				// Remove these arguments from args
+				args = args[2:]
+			}
+		}
+	}
+
+	// Count the number of existing parameters in the query for PostgreSQL
+	paramCount := 0
+	if dialect == PostgreSQL {
+		for i := 0; i < len(query); i++ {
+			if i+1 < len(query) && query[i] == '$' && query[i+1] >= '1' && query[i+1] <= '9' {
+				paramCount++
+			}
+		}
+	}
+
 	// Build cursor condition
 	if m.Cursor != "" {
 		cursorValue, err := decodeCursor(m.Cursor)
@@ -80,7 +127,7 @@ func applyCursorSQLPagination(ctx context.Context, db *sql.DB, dialect Dialect, 
 
 		switch dialect {
 		case PostgreSQL:
-			cursorCondition = fmt.Sprintf("WHERE %s %s $%d", m.CursorField, operator, len(args)+1)
+			cursorCondition = fmt.Sprintf("WHERE %s %s $%d", m.CursorField, operator, paramCount+1)
 			args = append(args, cursorValue)
 		case MySQL, SQLite:
 			cursorCondition = fmt.Sprintf("WHERE %s %s ?", m.CursorField, operator)
@@ -91,7 +138,8 @@ func applyCursorSQLPagination(ctx context.Context, db *sql.DB, dialect Dialect, 
 	// Build the complete query
 	switch dialect {
 	case PostgreSQL:
-		paginatedQuery = fmt.Sprintf("%s %s ORDER BY %s %s LIMIT $%d", query, cursorCondition, m.CursorField, m.CursorOrder, len(args)+1)
+		paginatedQuery = fmt.Sprintf("%s %s ORDER BY %s %s LIMIT $%d",
+			query, cursorCondition, m.CursorField, m.CursorOrder, paramCount+len(args)+1)
 		args = append(args, m.PageSize)
 	case MySQL, SQLite:
 		paginatedQuery = fmt.Sprintf("%s %s ORDER BY %s %s LIMIT ?", query, cursorCondition, m.CursorField, m.CursorOrder)
