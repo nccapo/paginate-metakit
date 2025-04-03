@@ -1,6 +1,7 @@
 package metakit
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"reflect"
@@ -201,4 +202,54 @@ func decodeCursor(cursor string) (string, error) {
 		return "", err
 	}
 	return string(decoded), nil
+}
+
+// ApplyOptimizationsToGorm applies query optimizations to a GORM query
+func (q *QueryOptimizer) ApplyOptimizationsToGorm(db *gorm.DB) *gorm.DB {
+	optimizedDB := db
+
+	// Apply index hints if enabled (using GORM's hints method)
+	if q.UseIndexHint {
+		// Use proper GORM clauses to apply index hints
+		// instead of manually adding SQL fragments that might break syntax
+		switch db.Dialector.Name() {
+		case "mysql":
+			optimizedDB = optimizedDB.Clauses(gorm.Expr("USE INDEX (idx_created_at)"))
+		case "postgres":
+			// PostgreSQL uses a different syntax for index hints
+			optimizedDB = optimizedDB.Clauses(gorm.Expr("/*+ IndexScan(table_name idx_created_at) */"))
+		}
+	}
+
+	// Apply batch size if specified
+	if q.BatchSize > 0 {
+		// Not directly applicable to query but can be used for callbacks
+		optimizedDB.Statement.Settings.Store("batch_size", q.BatchSize)
+	}
+
+	// Apply timeout if specified
+	if q.Timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), q.Timeout)
+		// Store cancel func to prevent context leak
+		optimizedDB.Statement.Settings.Store("context_cancel", cancel)
+		optimizedDB = optimizedDB.Session(&gorm.Session{
+			Context: ctx,
+		})
+	}
+
+	// Apply row limit if specified
+	if q.MaxRows > 0 {
+		optimizedDB = optimizedDB.Limit(q.MaxRows)
+	}
+
+	return optimizedDB
+}
+
+// OptimizedPaginate applies query optimization and pagination to a GORM query
+func OptimizedPaginate(db *gorm.DB, metadata *Metadata, optimizer *QueryOptimizer, dest interface{}) error {
+	// Apply query optimizations
+	optimizedDB := optimizer.ApplyOptimizationsToGorm(db)
+
+	// Apply pagination
+	return Paginate(optimizedDB, metadata, dest)
 }
