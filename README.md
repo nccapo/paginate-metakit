@@ -288,6 +288,28 @@ fields := metadata.GetSelectedFields() // Get fields to select
        WithTimeout(5 * time.Second)
    ```
 
+### SQL Pagination
+
+```go
+// Using standard SQL pagination
+metadata := metakit.NewMetadata().
+    WithPage(1).
+    WithPageSize(10).
+    WithSort("created_at").
+    WithSortDirection("desc")
+
+// Method 1: Using the metadata object
+rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, "SELECT * FROM users", metadata)
+
+// Method 2: Passing sort field and direction as separate arguments
+rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, "SELECT * FROM users", metadata, "id", "asc")
+
+// Method 3: Using with PostgreSQL parameters
+query := "SELECT * FROM users WHERE created_at > $1"
+createdAt := time.Now().Add(-24 * time.Hour)
+rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, query, metadata, createdAt)
+```
+
 ### Real-World Benchmark Results
 
 Recent benchmarks on a MacBook Pro with 16GB RAM and PostgreSQL 15:
@@ -450,35 +472,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-### SQL Pagination
-
-```go
-// Using standard SQL pagination
-metadata := metakit.NewMetadata().
-    WithPage(1).
-    WithPageSize(10).
-    WithSort("created_at").
-    WithSortDirection("desc")
-
-// Method 1: Using the metadata object
-rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, "SELECT * FROM users", metadata)
-
-// Method 2: Passing sort field and direction as separate arguments
-rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, "SELECT * FROM users", metadata, "id", "asc")
-
-// Method 3: Using with PostgreSQL parameters
-query := "SELECT * FROM users WHERE created_at > $1"
-createdAt := time.Now().Add(-24 * time.Hour)
-rows, err := metakit.QueryContextPaginate(ctx, db, metakit.PostgreSQL, query, metadata, createdAt)
-```
-
-### Validation
-
-```go
-// Validate metadata
-result := metadata.Validate()
-if !result.IsValid {
-    // Handle validation errors
-}
-```
